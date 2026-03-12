@@ -1,0 +1,318 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+<title>Game of Life</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    background: #0a0a0a;
+    color: #ccc;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    display: flex;
+    flex-direction: column;
+    height: 100dvh;
+    overflow: hidden;
+    touch-action: none;
+  }
+  #toolbar {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+    padding: 8px 10px;
+    background: #141414;
+    border-bottom: 1px solid #2a2a2a;
+    align-items: center;
+    z-index: 10;
+  }
+  #toolbar button, #toolbar select {
+    background: #222;
+    color: #ccc;
+    border: 1px solid #444;
+    border-radius: 6px;
+    padding: 6px 12px;
+    font-size: 14px;
+    cursor: pointer;
+    -webkit-tap-highlight-color: transparent;
+  }
+  #toolbar button:active { background: #444; }
+  #toolbar button.active { background: #2a6e2a; border-color: #4a4; }
+  #stats {
+    font-size: 13px;
+    color: #888;
+    margin-left: auto;
+    white-space: nowrap;
+  }
+  #canvas-wrap {
+    flex: 1;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    overflow: hidden;
+  }
+  canvas { display: block; }
+  #speed-row {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+  }
+  #speed-row label { font-size: 12px; color: #888; }
+  #speed { width: 70px; accent-color: #4a4; }
+</style>
+</head>
+<body>
+
+<div id="toolbar">
+  <button id="btn-play" class="active">Pause</button>
+  <button id="btn-step">Step</button>
+  <button id="btn-clear">Clear</button>
+  <button id="btn-random">Random</button>
+  <select id="sel-pattern">
+    <option value="">-- Pattern --</option>
+    <option value="glider">Glider</option>
+    <option value="lwss">Lightweight Spaceship</option>
+    <option value="gosper">Gosper Glider Gun</option>
+    <option value="pulsar">Pulsar</option>
+    <option value="rpentomino">R-pentomino</option>
+    <option value="acorn">Acorn</option>
+    <option value="diehard">Diehard</option>
+    <option value="pentadecathlon">Pentadecathlon</option>
+  </select>
+  <div id="speed-row">
+    <label>Speed</label>
+    <input type="range" id="speed" min="1" max="60" value="12">
+  </div>
+  <span id="stats">Gen 0 | Pop 0</span>
+</div>
+
+<div id="canvas-wrap">
+  <canvas id="c"></canvas>
+</div>
+
+<script>
+const CELL = Math.min(14, Math.max(8, Math.floor(Math.min(innerWidth, innerHeight) / 50)));
+const canvas = document.getElementById("c");
+const ctx = canvas.getContext("2d");
+
+let W, H, grid, gen, running = true, fps = 12;
+
+// Age-based colors: green -> yellow -> orange -> red
+const PALETTE = [
+  "#22c55e","#4ade80","#86efac","#a3e635","#d9f99d",
+  "#facc15","#f59e0b","#f97316","#ef4444","#dc2626"
+];
+
+function init() {
+  const wrap = document.getElementById("canvas-wrap");
+  W = Math.floor(wrap.clientWidth / CELL);
+  H = Math.floor(wrap.clientHeight / CELL);
+  canvas.width = W * CELL;
+  canvas.height = H * CELL;
+  grid = Array.from({length: H}, () => new Int32Array(W));
+  gen = 0;
+}
+
+function randomize(density = 0.3) {
+  for (let y = 0; y < H; y++)
+    for (let x = 0; x < W; x++)
+      grid[y][x] = Math.random() < density ? 1 : 0;
+  gen = 0;
+}
+
+function clear() {
+  for (let y = 0; y < H; y++) grid[y].fill(0);
+  gen = 0;
+}
+
+function neighbors(x, y) {
+  let n = 0;
+  for (let dy = -1; dy <= 1; dy++)
+    for (let dx = -1; dx <= 1; dx++) {
+      if (!dx && !dy) continue;
+      if (grid[(y + dy + H) % H][(x + dx + W) % W] > 0) n++;
+    }
+  return n;
+}
+
+function step() {
+  const next = Array.from({length: H}, () => new Int32Array(W));
+  for (let y = 0; y < H; y++)
+    for (let x = 0; x < W; x++) {
+      const n = neighbors(x, y);
+      if (grid[y][x] > 0) {
+        next[y][x] = (n === 2 || n === 3) ? Math.min(grid[y][x] + 1, PALETTE.length) : 0;
+      } else {
+        next[y][x] = n === 3 ? 1 : 0;
+      }
+    }
+  grid = next;
+  gen++;
+}
+
+function draw() {
+  ctx.fillStyle = "#0a0a0a";
+  ctx.fillRect(0, 0, canvas.width, canvas.height);
+  for (let y = 0; y < H; y++)
+    for (let x = 0; x < W; x++) {
+      if (grid[y][x] > 0) {
+        ctx.fillStyle = PALETTE[Math.min(grid[y][x] - 1, PALETTE.length - 1)];
+        ctx.fillRect(x * CELL + 1, y * CELL + 1, CELL - 1, CELL - 1);
+      }
+    }
+  document.getElementById("stats").textContent = `Gen ${gen} | Pop ${population()}`;
+}
+
+function population() {
+  let p = 0;
+  for (let y = 0; y < H; y++)
+    for (let x = 0; x < W; x++)
+      if (grid[y][x] > 0) p++;
+  return p;
+}
+
+// ── Patterns ────────────────────────────────────────────────────────
+
+const PATTERNS = {
+  glider: [[0,1],[1,2],[2,0],[2,1],[2,2]],
+  lwss: [[0,1],[0,3],[1,4],[2,0],[2,4],[3,1],[3,2],[3,3],[3,4]],
+  rpentomino: [[1,0],[2,0],[0,1],[1,1],[1,2]],
+  diehard: [[6,0],[0,1],[1,1],[1,2],[5,2],[6,2],[7,2]],
+  acorn: [[1,0],[3,1],[0,2],[1,2],[4,2],[5,2],[6,2]],
+  pulsar: [
+    [2,0],[3,0],[4,0],[8,0],[9,0],[10,0],
+    [0,2],[5,2],[7,2],[12,2],
+    [0,3],[5,3],[7,3],[12,3],
+    [0,4],[5,4],[7,4],[12,4],
+    [2,5],[3,5],[4,5],[8,5],[9,5],[10,5],
+    [2,7],[3,7],[4,7],[8,7],[9,7],[10,7],
+    [0,8],[5,8],[7,8],[12,8],
+    [0,9],[5,9],[7,9],[12,9],
+    [0,10],[5,10],[7,10],[12,10],
+    [2,12],[3,12],[4,12],[8,12],[9,12],[10,12],
+  ],
+  gosper: [
+    [24,0],
+    [22,1],[24,1],
+    [12,2],[13,2],[20,2],[21,2],[34,2],[35,2],
+    [11,3],[15,3],[20,3],[21,3],[34,3],[35,3],
+    [0,4],[1,4],[10,4],[16,4],[20,4],[21,4],
+    [0,5],[1,5],[10,5],[14,5],[16,5],[17,5],[22,5],[24,5],
+    [10,6],[16,6],[24,6],
+    [11,7],[15,7],
+    [12,8],[13,8],
+  ],
+  pentadecathlon: [
+    [1,0],[2,0],[3,0],
+    [0,1],[4,1],
+    [0,2],[4,2],
+    [1,3],[2,3],[3,3],
+    [1,5],[2,5],[3,5],
+    [0,6],[4,6],
+    [0,7],[4,7],
+    [1,8],[2,8],[3,8],
+  ],
+};
+
+function placePattern(name) {
+  clear();
+  const cells = PATTERNS[name];
+  if (!cells) return;
+  const maxX = Math.max(...cells.map(c => c[0]));
+  const maxY = Math.max(...cells.map(c => c[1]));
+  const ox = Math.floor((W - maxX) / 2);
+  const oy = Math.floor((H - maxY) / 2);
+  for (const [x, y] of cells)
+    grid[(oy + y + H) % H][(ox + x + W) % W] = 1;
+}
+
+// ── Drawing with touch/mouse ────────────────────────────────────────
+
+let drawing = false;
+
+function cellAt(e) {
+  const rect = canvas.getBoundingClientRect();
+  const clientX = e.touches ? e.touches[0].clientX : e.clientX;
+  const clientY = e.touches ? e.touches[0].clientY : e.clientY;
+  return [
+    Math.floor((clientX - rect.left) / CELL),
+    Math.floor((clientY - rect.top) / CELL)
+  ];
+}
+
+function paint(e) {
+  const [x, y] = cellAt(e);
+  if (x >= 0 && x < W && y >= 0 && y < H) {
+    grid[y][x] = grid[y][x] > 0 ? 0 : 1;
+    draw();
+  }
+}
+
+canvas.addEventListener("mousedown", e => { drawing = true; paint(e); });
+canvas.addEventListener("mousemove", e => { if (drawing) { const [x,y] = cellAt(e); if(x>=0&&x<W&&y>=0&&y<H){grid[y][x]=1;draw();}}});
+window.addEventListener("mouseup", () => drawing = false);
+
+canvas.addEventListener("touchstart", e => { e.preventDefault(); drawing = true; paint(e); }, {passive:false});
+canvas.addEventListener("touchmove", e => { e.preventDefault(); if(drawing){const[x,y]=cellAt(e);if(x>=0&&x<W&&y>=0&&y<H){grid[y][x]=1;draw();}}}, {passive:false});
+canvas.addEventListener("touchend", () => drawing = false);
+
+// ── Controls ────────────────────────────────────────────────────────
+
+const btnPlay = document.getElementById("btn-play");
+btnPlay.addEventListener("click", () => {
+  running = !running;
+  btnPlay.textContent = running ? "Pause" : "Play";
+  btnPlay.classList.toggle("active", running);
+});
+
+document.getElementById("btn-step").addEventListener("click", () => {
+  step(); draw();
+});
+
+document.getElementById("btn-clear").addEventListener("click", () => {
+  clear(); draw();
+});
+
+document.getElementById("btn-random").addEventListener("click", () => {
+  randomize(); draw();
+});
+
+document.getElementById("sel-pattern").addEventListener("change", function() {
+  if (this.value) { placePattern(this.value); draw(); }
+  this.value = "";
+});
+
+document.getElementById("speed").addEventListener("input", function() {
+  fps = +this.value;
+});
+
+// ── Main loop ───────────────────────────────────────────────────────
+
+init();
+randomize();
+draw();
+
+let last = 0;
+function loop(ts) {
+  if (running && ts - last > 1000 / fps) {
+    step();
+    draw();
+    last = ts;
+  }
+  requestAnimationFrame(loop);
+}
+requestAnimationFrame(loop);
+
+// Handle resize
+window.addEventListener("resize", () => {
+  const oldGrid = grid;
+  const oldW = W, oldH = H;
+  init();
+  for (let y = 0; y < Math.min(oldH, H); y++)
+    for (let x = 0; x < Math.min(oldW, W); x++)
+      grid[y][x] = oldGrid[y][x];
+  draw();
+});
+</script>
+</body>
+</html>
